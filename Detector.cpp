@@ -16,6 +16,7 @@ float GetFloatPrecision(float value, float precision)
 }
 
 bool ShotBoundaryDetector::StartDetection() {
+
   if (video_file_name.size() == 0 || Width == 0 || Height == 0)
   {
     fprintf(stderr, "Video location not defined");
@@ -102,6 +103,7 @@ bool ShotBoundaryDetector::StartDetection() {
         if(ddc.back() > 20) {
             //find a hard cut
             frame.WriteImage();
+            boundary_id_list.push_back(i);
         }
         else if(ddc.back() > 5) {
           fade_begin_dc = dc[dc.size()-2];
@@ -112,6 +114,7 @@ bool ShotBoundaryDetector::StartDetection() {
           fade_begin_dc = -1;
           //find a fade cut
           frame.WriteImage();
+          boundary_id_list.push_back(i);
         }
       }
 

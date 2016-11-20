@@ -16,7 +16,7 @@ MyImage::~MyImage()
 }
 
 // Copy constructor
-MyImage::MyImage( MyImage *otherImage)
+MyImage::MyImage(MyImage *otherImage)
 {
 	Height = otherImage->Height;
 	Width  = otherImage->Width;

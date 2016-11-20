@@ -16,10 +16,6 @@ public:
 
   bool StartDetection();
 
-  vector<MyImage> get_boundary_frames() {
-    return boundary_frame_list;
-  }
-
   vector<long> get_boundary_ids() {
     return boundary_id_list;
   }
@@ -44,7 +40,6 @@ private:
   int		Width;
 	int		Height;
   string video_file_name;
-  vector<MyImage> boundary_frame_list;
   vector<long> boundary_id_list;
   bool ReadNextFrame(MyImage& output_image, FILE* fp);
   bool GetAvgRow(MyImage& input_image, char* output_row);
