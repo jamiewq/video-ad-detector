@@ -181,8 +181,6 @@ bool MyImage::ReadImage()
 
 }
 
-
-
 // MyImage functions defined here
 bool MyImage::WriteImage()
 {

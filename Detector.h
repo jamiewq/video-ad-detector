@@ -4,6 +4,7 @@
 #include <string>
 #include <sstream>
 #include <iostream>
+#include <fstream>
 #include <stdlib.h>
 #include <vector>
 #include "Image.h"
@@ -46,6 +47,7 @@ private:
   vector<MyImage> boundary_frame_list;
   vector<long> boundary_id_list;
   bool ReadNextFrame(MyImage& output_image, FILE* fp);
+  bool GetAvgRow(MyImage& input_image, char* output_row);
 };
 
 #endif //DETECTOR_H_
