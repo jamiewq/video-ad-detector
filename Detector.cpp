@@ -153,14 +153,12 @@ bool ShotBoundaryDetector::StartDetection() {
   boundary_id_list.push_back(i-1);
 
   vector<Shot> shot_list;
-  vector<long> lengths;
 
   for(int i = 0; i < boundary_id_list.size() - 1; i++) {
     Shot new_shot = Shot(boundary_id_list[i], boundary_id_list[i+1]);
     // Eliminate those extremly short shot, which might be wrong cut
     if(new_shot.length <= 10) continue;
     shot_list.push_back(new_shot);
-    lengths.push_back(shot_list.back().length);
   }
 
   Mat dataset(shot_list.size(),1, CV_32F);
@@ -168,7 +166,7 @@ bool ShotBoundaryDetector::StartDetection() {
   Mat centers;
 
   for(int i = 0; i < shot_list.size(); i++) {
-    cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
+    // cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
     if(i == 0) {
         dataset.at<float>(i) =  1;
         continue;
@@ -178,19 +176,13 @@ bool ShotBoundaryDetector::StartDetection() {
     dataset.at<float>(i) = l1/l2;
   }
 
-  kmeans( dataset,
-                2,
-                lables,
-                TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0),
-                3,
-                KMEANS_RANDOM_CENTERS,
-                centers);
+  kmeans( dataset, 2, lables, TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0), 3, KMEANS_RANDOM_CENTERS, centers);
 
-  cout << "labels  :" <<endl;
+  cout << "Ad detection result : " <<endl;
   float lable_1_sample = -1;
   float lable_0_sample = -1;
   for(int i = 0; i < shot_list.size(); i++) {
-      cout <<"shot "<< i << "\t delta: "<< dataset.at<float>(i)<< " from : "<< shot_list[i].start_frame_id << " to : "<< shot_list[i].end_frame_id << " length : "<< shot_list[i].length << " label: "<< lables.at<int>(i) <<endl;
+      cout <<"shot "<< i << "\tlength : "<< shot_list[i].length << "\t delta: "<< dataset.at<float>(i)<< "\tfrom : "<< shot_list[i].start_frame_id << "\tto : "<< shot_list[i].end_frame_id << "\tlabel: "<< lables.at<int>(i) <<endl;
       if(lables.at<int>(i) == 0) {
           lable_0_sample = dataset.at<float>(i);
       }
@@ -198,7 +190,6 @@ bool ShotBoundaryDetector::StartDetection() {
           lable_1_sample = dataset.at<float>(i);
       }
   }
-  cout << "labels  end" <<endl;
 
   vector<pair<long, long> > ad_list_frameid_frameid;
 
@@ -249,8 +240,12 @@ bool ShotBoundaryDetector::StartDetection() {
       cout << "start frame : " << ad_list_frameid_frameid[i].first << " end frame : " << ad_list_frameid_frameid[i].second<<endl;
   }
 
+  ad_list = ad_list_frameid_frameid;
+
   int frame_num = i;
-  cout << "Video contains" << frame_num << " frames" <<endl;
+  cout << "The Video contains" << frame_num << " frames" <<endl;
+
+  // Generate tomograph for whole video
   MyImage tomograph;
   tomograph.setWidth(Width);
   tomograph.setHeight(frame_num);
@@ -271,7 +266,7 @@ bool ShotBoundaryDetector::StartDetection() {
   tomograph.WriteImage();
 
   fclose(IN_FILE);
-  waitKey(0);
+  if(display_each_cut) waitKey(0);
   return true;
 }
 

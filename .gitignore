@@ -2,4 +2,5 @@
 /dataset2
 paper.pdf
 out
+*.rgb
 .DS_Store

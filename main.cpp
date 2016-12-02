@@ -1,5 +1,4 @@
 #include "Detector.h"
-#include "Image.h"
 #include <ctime>
 int main() {
 
@@ -12,10 +11,11 @@ int main() {
 
   detector.display_cut(true);
   detector.set_similar_threshold(10);
-  int start_s=clock();
+  int start_s = clock();
   detector.StartDetection();
-  
   int stop_s=clock();
   cout << "time: " << (stop_s-start_s)/double(CLOCKS_PER_SEC)*1000 << endl;
+
+  vector<pair<long, long> > ads = detector.get_ad_list();
   return 0;
 }
