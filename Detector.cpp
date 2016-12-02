@@ -1,10 +1,41 @@
 #include "Detector.h"
+#include "Shot.h"
+#include <cv.h>
+#include <highgui.h>
 
+using namespace cv;
 
-bool similar(char* row1, int pos1, char* row2, int pos2) {
-  if( abs(row1[pos1]-row2[pos2]) +
+// Compile : clang++ `pkg-config --cflags --libs opencv` main.cpp Image.cpp Detector.cpp -o out
+bool display(MyImage& img, int index){
+  static int count = 1;
+  char* imgData = img.getImageData();
+  Mat image(img.getHeight(), img.getWidth(),CV_8UC3, Scalar(0, 0, 0));
+
+  for (int i = 0; i < image.cols; i++) {
+      for (int j = 0; j < image.rows; j++) {
+          Vec3b &intensity = image.at<Vec3b>(j, i);
+          // calculate pixValue
+          int position = j * img.getWidth() * 3 + i * 3;
+          intensity.val[0] = imgData[position];
+          intensity.val[1] = imgData[position + 1];
+          intensity.val[2] = imgData[position + 2];
+       }
+  }
+  stringstream ss;
+  ss << "Display Frame" << index << " No."<<count;
+  namedWindow(ss.str() , CV_WINDOW_AUTOSIZE );
+
+  imshow( ss.str(), image );
+
+  waitKey(100);
+  count++;
+  return true;
+}
+
+bool ShotBoundaryDetector::similar(char* row1, int pos1, char* row2, int pos2) {
+  if( (abs(row1[pos1]-row2[pos2]) +
       abs(row1[pos1 + 1]-row2[pos2 + 1]) +
-      abs(row1[pos1 + 2]-row2[pos2 + 2]) < 12 ) {
+      abs(row1[pos1 + 2]-row2[pos2 + 2]) ) < similarThreshold ) {
     return true;
   }
   else return false;
@@ -43,12 +74,9 @@ bool ShotBoundaryDetector::StartDetection() {
   vector<float> ddc;
   float fade_begin_dc = -1;
 
-  ofstream myfile1;
-  ofstream myfile2;
-  myfile1.open ("ddc-y.txt");
-  myfile2.open ("ddc-x.txt");
-
   int i = 0;
+  // Include first frame
+  boundary_id_list.push_back(0);
   while ( !feof(IN_FILE) )
   {
     counts.push_back(1);
@@ -96,13 +124,12 @@ bool ShotBoundaryDetector::StartDetection() {
     if(i >= 1) dc.push_back(1.0 * counts[i] / counts[i-1]);
     if(i >= 2) {
       ddc.push_back(dc.back() / dc[dc.size()-2]);
-      myfile1<< GetFloatPrecision(ddc.back(),3) <<endl; // ddc val
-      myfile2<<( (i%3==0)? 1.0*i/30 : i * 0.0333)<<endl; // time
 
       if(fade_begin_dc < 0) {
         if(ddc.back() > 20) {
             //find a hard cut
             frame.WriteImage();
+            if(display_each_cut) display(frame, i);
             boundary_id_list.push_back(i);
         }
         else if(ddc.back() > 5) {
@@ -114,12 +141,112 @@ bool ShotBoundaryDetector::StartDetection() {
           fade_begin_dc = -1;
           //find a fade cut
           frame.WriteImage();
+          if(display_each_cut) display(frame, i);
           boundary_id_list.push_back(i);
         }
       }
 
     }
     i++;
+  }
+  // Include last frame
+  boundary_id_list.push_back(i-1);
+
+  vector<Shot> shot_list;
+  vector<long> lengths;
+
+  for(int i = 0; i < boundary_id_list.size() - 1; i++) {
+    Shot new_shot = Shot(boundary_id_list[i], boundary_id_list[i+1]);
+    // Eliminate those extremly short shot, which might be wrong cut
+    if(new_shot.length <= 10) continue;
+    shot_list.push_back(new_shot);
+    lengths.push_back(shot_list.back().length);
+  }
+
+  Mat dataset(shot_list.size(),1, CV_32F);
+  Mat lables(shot_list.size(),1, CV_32F);
+  Mat centers;
+
+  for(int i = 0; i < shot_list.size(); i++) {
+    cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
+    if(i == 0) {
+        dataset.at<float>(i) =  1;
+        continue;
+    }
+    float l1 = max(shot_list[i].length, shot_list[i-1].length);
+    float l2 = min(shot_list[i].length, shot_list[i-1].length);
+    dataset.at<float>(i) = l1/l2;
+  }
+
+  kmeans( dataset,
+                2,
+                lables,
+                TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0),
+                3,
+                KMEANS_RANDOM_CENTERS,
+                centers);
+
+  cout << "labels  :" <<endl;
+  float lable_1_sample = -1;
+  float lable_0_sample = -1;
+  for(int i = 0; i < shot_list.size(); i++) {
+      cout <<"shot "<< i << "\t delta: "<< dataset.at<float>(i)<< " from : "<< shot_list[i].start_frame_id << " to : "<< shot_list[i].end_frame_id << " length : "<< shot_list[i].length << " label: "<< lables.at<int>(i) <<endl;
+      if(lables.at<int>(i) == 0) {
+          lable_0_sample = dataset.at<float>(i);
+      }
+      else {
+          lable_1_sample = dataset.at<float>(i);
+      }
+  }
+  cout << "labels  end" <<endl;
+
+  vector<pair<long, long> > ad_list_frameid_frameid;
+
+  long ad_start_frame = 0;
+  long ad_end_frame = 0;
+  // lable 0 is Ad change frame
+  if(lable_0_sample > lable_1_sample) {
+
+      for(int i = 0; i < shot_list.size(); i++) {
+          if(lables.at<int>(i) == 0) {
+              // from main content to Ad
+              if(shot_list[i].length < shot_list[i-1].length) {
+                  if(!(i-1 >=0 && lables.at<int>(i-1) == 0 && shot_list[i-1].length < shot_list[i-2].length))
+                    ad_start_frame = shot_list[i].start_frame_id;
+              }
+              // from Ad to main content
+              else if(shot_list[i].length > shot_list[i-1].length){
+                  if(!(i+1 < shot_list.size() && lables.at<int>(i+1) == 0 && shot_list[i+1].length > shot_list[i].length)) {
+                      ad_end_frame = shot_list[i-1].end_frame_id;
+                      ad_list_frameid_frameid.push_back( make_pair(ad_start_frame, ad_end_frame) );
+                  }
+              }
+          }
+      }
+  }
+  // lable 1 is Ad change frame
+  else {
+      for(int i = 0; i < shot_list.size(); i++) {
+          if(lables.at<int>(i) == 1) {
+              // from main content to Ad
+              if(shot_list[i].length < shot_list[i-1].length) {
+                  if(!(i-1 >=0 && lables.at<int>(i-1) == 1 && shot_list[i-1].length < shot_list[i-2].length))
+                    ad_start_frame = shot_list[i].start_frame_id;
+              }
+              // from Ad to main content
+              else if(shot_list[i].length > shot_list[i-1].length){
+                  if(!(i+1 < shot_list.size() && lables.at<int>(i+1) == 1 && shot_list[i+1].length > shot_list[i].length)) {
+                      ad_end_frame = shot_list[i-1].end_frame_id;
+                      ad_list_frameid_frameid.push_back( make_pair(ad_start_frame, ad_end_frame) );
+                  }
+              }
+          }
+      }
+  }
+
+  for(int i = 0 ; i < ad_list_frameid_frameid.size(); i++) {
+      cout <<"ad" << i <<":\t";
+      cout << "start frame : " << ad_list_frameid_frameid[i].first << " end frame : " << ad_list_frameid_frameid[i].second<<endl;
   }
 
   int frame_num = i;
@@ -144,10 +271,9 @@ bool ShotBoundaryDetector::StartDetection() {
   tomograph.WriteImage();
 
   fclose(IN_FILE);
-
+  waitKey(0);
   return true;
 }
-
 
 bool ShotBoundaryDetector::GetAvgRow(MyImage& input_image, char* output_row) {
   if(input_image.getWidth() == 0 || input_image.getHeight() == 0 || input_image.getWidth() != Width || input_image.getHeight() != Height) {
