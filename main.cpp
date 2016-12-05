@@ -4,12 +4,12 @@ int main() {
 
   // ShotBoundaryDetector detector("./dataset2/Ads/nfl_Ad_15s.rgb", 480, 270);
   // ShotBoundaryDetector detector("./dataset2/Ads/mcd_Ad_15s.rgb", 480, 270);
-  // ShotBoundaryDetector detector("./dataset2/Videos/data_test2.rgb", 480, 270);
+  ShotBoundaryDetector detector("./dataset2/Videos/data_test2.rgb", 480, 270);
   // ShotBoundaryDetector detector("./dataset/Ads/Starbucks_Ad_15s.rgb", 480, 270);
   // ShotBoundaryDetector detector("./dataset/Ads/Subway_Ad_15s.rgb", 480, 270);
-  ShotBoundaryDetector detector("./dataset/Videos/data_test1.rgb", 480, 270);
+  // ShotBoundaryDetector detector("./dataset/Videos/data_test1.rgb", 480, 270);
 
-  detector.display_cut(true);
+  // detector.display_cut(true);
   detector.set_similar_threshold(8);
   detector.set_cut_threshold(10);
   detector.set_min_ad_length(150); // 3 seconds

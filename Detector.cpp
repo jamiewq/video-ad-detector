@@ -171,13 +171,13 @@ bool ShotBoundaryDetector::StartDetection() {
   // If we have a sudden drop of length then sudden up again, it is a fault. No ad will only contain a single short shot
   vector<Shot> shot_list = origin_shot_list;
   for(int i = 0 ; i < origin_shot_list.size(); i++) {
-      if(i == 0 && (float)(origin_shot_list[i+1].length)/ origin_shot_list[i].length > 10 ) {
+      if(i == 0 && (float)(origin_shot_list[i+1].length) / origin_shot_list[i].length > 10 ) {
           shot_list[0].length = origin_shot_list[i+1].length;
       }
-      else if(i == (origin_shot_list.size() - 1) && (float)(origin_shot_list[i-1].length)/ origin_shot_list[i].length > 10){
+      else if(i == (origin_shot_list.size() - 1) && i != 0 && (float)(origin_shot_list[i-1].length)/ origin_shot_list[i].length > 10){
           shot_list[i].length = origin_shot_list[i-1].length;
       }
-      else if((float)(origin_shot_list[i-1].length) / origin_shot_list[i].length > 3 && (float)(origin_shot_list[i+1].length) / origin_shot_list[i].length > 3){
+      else if(i > 0 && i + 1 < origin_shot_list.size() && (float)(origin_shot_list[i-1].length) / origin_shot_list[i].length > 3 && (float)(origin_shot_list[i+1].length) / origin_shot_list[i].length > 3){
           shot_list[i].length = min(origin_shot_list[i-1].length, origin_shot_list[i+1].length);
       }
       if (shot_list[i].length > max_ad_shot_length) shot_list[i].length *= 1.5;
@@ -202,21 +202,6 @@ bool ShotBoundaryDetector::StartDetection() {
     dataset_change.at<float>(i) = min(l1/l2, max_delta);
     dataset_in_vector[i] = dataset_change.at<float>(i);
   }
-
-  //Second round divide
-  // for(int i = 0; i < shot_list.size(); i++) {
-  //   // cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
-  //   if(i > 0) {
-  //       float l1 = max(dataset_in_vector[i], dataset_in_vector[i-1]);
-  //       float l2 = min(dataset_in_vector[i], dataset_in_vector[i-1]);
-  //       dataset_change.at<float>(i) = l1/l2;
-  //   }
-  //   if(i < shot_list.size()-1) {
-  //       float l1 = max(dataset_in_vector[i], dataset_in_vector[i+1]);
-  //       float l2 = min(dataset_in_vector[i], dataset_in_vector[i+1]);
-  //       dataset_change.at<float>(i) = min(dataset_change.at<float>(i), l1/l2);
-  //   }
-  // }
 
   kmeans( dataset_change, 2, lables_change, TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0), 3, KMEANS_RANDOM_CENTERS, centers);
 

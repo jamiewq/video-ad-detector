@@ -4,3 +4,5 @@ paper.pdf
 out
 *.rgb
 .DS_Store
+log.txt
+
