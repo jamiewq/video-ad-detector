@@ -120,13 +120,14 @@ bool ShotBoundaryDetector::StartDetection() {
         counts[i] ++;
       }
     }
+    log << i << "\t" << counts[i] << "\t";
 
     if(i >= 1) dc.push_back(1.0 * counts[i] / counts[i-1]);
     if(i >= 2) {
       ddc.push_back(dc.back() / dc[dc.size()-2]);
-
+      log << i << "\t" << ddc.back() << endl;
       if(fade_begin_dc < 0) {
-        if(ddc.back() > 20) {
+        if(ddc.back() > cutThreshold) {
             //find a hard cut
             frame.WriteImage();
             if(display_each_cut) display(frame, i);
@@ -137,7 +138,7 @@ bool ShotBoundaryDetector::StartDetection() {
         }
       }
       else {
-        if( dc.back() / fade_begin_dc > 20) {
+        if( dc.back() / fade_begin_dc > cutThreshold) {
           fade_begin_dc = -1;
           //find a fade cut
           frame.WriteImage();
@@ -149,90 +150,255 @@ bool ShotBoundaryDetector::StartDetection() {
     }
     i++;
   }
+  int frame_num = i;
   // Include last frame
   boundary_id_list.push_back(i-1);
 
-  vector<Shot> shot_list;
+  vector<Shot> origin_shot_list;
 
   for(int i = 0; i < boundary_id_list.size() - 1; i++) {
     Shot new_shot = Shot(boundary_id_list[i], boundary_id_list[i+1]);
     // Eliminate those extremly short shot, which might be wrong cut
-    if(new_shot.length <= 10) continue;
-    shot_list.push_back(new_shot);
+    while(i + 1 < boundary_id_list.size() && (boundary_id_list[i+1]-boundary_id_list[i]) <= 10) i++;
+    if(i + 1 < boundary_id_list.size()) {
+        new_shot.end_frame_id = boundary_id_list[i+1];
+        new_shot.length = new_shot.end_frame_id - new_shot.start_frame_id;
+    }
+    origin_shot_list.push_back(new_shot);
   }
 
-  Mat dataset(shot_list.size(),1, CV_32F);
-  Mat lables(shot_list.size(),1, CV_32F);
+  // Preprocessing of shot lengths
+  // If we have a sudden drop of length then sudden up again, it is a fault. No ad will only contain a single short shot
+  vector<Shot> shot_list = origin_shot_list;
+  for(int i = 0 ; i < origin_shot_list.size(); i++) {
+      if(i == 0 && (float)(origin_shot_list[i+1].length)/ origin_shot_list[i].length > 10 ) {
+          shot_list[0].length = origin_shot_list[i+1].length;
+      }
+      else if(i == (origin_shot_list.size() - 1) && (float)(origin_shot_list[i-1].length)/ origin_shot_list[i].length > 10){
+          shot_list[i].length = origin_shot_list[i-1].length;
+      }
+      else if((float)(origin_shot_list[i-1].length) / origin_shot_list[i].length > 3 && (float)(origin_shot_list[i+1].length) / origin_shot_list[i].length > 3){
+          shot_list[i].length = min(origin_shot_list[i-1].length, origin_shot_list[i+1].length);
+      }
+      if (shot_list[i].length > max_ad_shot_length) shot_list[i].length *= 1.5;
+      else if (shot_list[i].length > max_ad_shot_length / 2) shot_list[i].length *= 1;
+      else if (shot_list[i].length < max_ad_shot_length / 2) shot_list[i].length *= 0.7;
+  }
+
+  vector<float> dataset_in_vector(shot_list.size());
+  Mat dataset_change(shot_list.size(),1, CV_32F);
+  Mat lables_change(shot_list.size(),1, CV_32F);
   Mat centers;
 
   for(int i = 0; i < shot_list.size(); i++) {
     // cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
     if(i == 0) {
-        dataset.at<float>(i) =  1;
+        dataset_change.at<float>(i) =  1;
+        dataset_in_vector[i] = 1;
         continue;
     }
     float l1 = max(shot_list[i].length, shot_list[i-1].length);
     float l2 = min(shot_list[i].length, shot_list[i-1].length);
-    dataset.at<float>(i) = l1/l2;
+    dataset_change.at<float>(i) = min(l1/l2, max_delta);
+    dataset_in_vector[i] = dataset_change.at<float>(i);
   }
 
-  kmeans( dataset, 2, lables, TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0), 3, KMEANS_RANDOM_CENTERS, centers);
+  //Second round divide
+  // for(int i = 0; i < shot_list.size(); i++) {
+  //   // cout<< "Shot"<< i << ".length = " << shot_list[i].length << " start : " << shot_list[i].start_frame_id << " end : " << shot_list[i].end_frame_id << endl;
+  //   if(i > 0) {
+  //       float l1 = max(dataset_in_vector[i], dataset_in_vector[i-1]);
+  //       float l2 = min(dataset_in_vector[i], dataset_in_vector[i-1]);
+  //       dataset_change.at<float>(i) = l1/l2;
+  //   }
+  //   if(i < shot_list.size()-1) {
+  //       float l1 = max(dataset_in_vector[i], dataset_in_vector[i+1]);
+  //       float l2 = min(dataset_in_vector[i], dataset_in_vector[i+1]);
+  //       dataset_change.at<float>(i) = min(dataset_change.at<float>(i), l1/l2);
+  //   }
+  // }
+
+  kmeans( dataset_change, 2, lables_change, TermCriteria( TermCriteria::EPS+TermCriteria::COUNT, 10, 1.0), 3, KMEANS_RANDOM_CENTERS, centers);
 
   cout << "Ad detection result : " <<endl;
   float lable_1_sample = -1;
   float lable_0_sample = -1;
+  float lable_1_sample_lengths = -1;
+  float lable_0_sample_lengths = -1;
   for(int i = 0; i < shot_list.size(); i++) {
-      cout <<"shot "<< i << "\tlength : "<< shot_list[i].length << "\t delta: "<< dataset.at<float>(i)<< "\tfrom : "<< shot_list[i].start_frame_id << "\tto : "<< shot_list[i].end_frame_id << "\tlabel: "<< lables.at<int>(i) <<endl;
-      if(lables.at<int>(i) == 0) {
-          lable_0_sample = dataset.at<float>(i);
+      cout <<"shot "<< i <<  "\tlength : "<< origin_shot_list[i].length << "\tweight : "<< shot_list[i].length << "\t delta: "<< dataset_change.at<float>(i)<< "\tfrom : "<< shot_list[i].start_frame_id << "\tto : "<< shot_list[i].end_frame_id << "\tlabel: "<< lables_change.at<int>(i)<<endl;
+      if(lables_change.at<int>(i) == 0) {
+          lable_0_sample = dataset_change.at<float>(i);
       }
       else {
-          lable_1_sample = dataset.at<float>(i);
+          lable_1_sample = dataset_change.at<float>(i);
       }
   }
 
   vector<pair<long, long> > ad_list_frameid_frameid;
+  vector<long> ad_list_shot_ids;
 
-  long ad_start_frame = 0;
-  long ad_end_frame = 0;
+  long ad_start_frame = -1;
+  long ad_end_frame = -1;
+  long start_id = -1;
   // lable 0 is Ad change frame
   if(lable_0_sample > lable_1_sample) {
+    // Deal with gradually change, they all labled with 0(no great change), but 29-138-291 is a gruadual change:
+    // shot 22	length : 51	weight : 35	 delta: 1.59091	from : 6337	to : 6388	label: 0
+    // shot 23	length : 24	weight : 16	 delta: 2.1875	from : 6388	to : 6412	label: 0
+    // shot 24	length : 39	weight : 27	 delta: 1.6875	from : 6412	to : 6451	label: 0
+    // shot 25	length : 138	weight : 96	 delta: 3.55556	from : 6451	to : 6589	label: 0
+    // shot 26	length : 291	weight : 436	 delta: 4.54167	from : 6589	to : 6880	label: 0
+    // shot 27	length : 668	weight : 1002	 delta: 2.29817	from : 6880	to : 7548	label: 0
+    // shot 28	length : 392	weight : 588	 delta: 1.70408	from : 7548	to : 7940	label: 0
+      for(int i = 0 ; i < shot_list.size()-1; i++) {
+          if(lables_change.at<int>(i) == 1
+              && lables_change.at<int>(i+1) == 1
+              && dataset_change.at<float>(i) > 3
+              && dataset_change.at<float>(i+1) > 3
+          ) {
+                cout <<" find a fucking gradually change"<<endl;
+                float avg_prev = 0;
+                float avg_post = 0;
+                int count_prev = 0;
+                int count_post = 0;
+                for(int j = 1 ; j <= 2; j++) {
+                    if(i - j >= 0) {
+                        avg_prev += shot_list[i - j].length;
+                        count_prev ++;
+                    }
+                    if(i + j < shot_list.size()) {
+                        avg_post += shot_list[i + j].length;
+                        count_post ++;
+                    }
+                    cout <<"avg_prev: " << avg_prev << endl;
+                    cout <<"avg_post: " << avg_post << endl;
+                    cout <<"count_prev: " << count_prev << endl;
+                    cout <<"count_post: " << count_post << endl;
+                }
+                if(count_prev) avg_prev /= count_prev;
+                if(count_post) avg_post /= count_post;
+                cout <<"avg_prev: " << avg_prev << endl;
+                cout <<"avg_post: " << avg_post << endl;
+                if( avg_prev && avg_post && ((avg_post / avg_prev) > 5 || (avg_prev / avg_post) > 5 )) {
+                    cout <<"get a fucking shit" <<endl;
+                    lables_change.at<int>(i) = 0;
+                }
+            }
+      }
 
+      cout<<"0 is big change"<<endl;
       for(int i = 0; i < shot_list.size(); i++) {
-          if(lables.at<int>(i) == 0) {
+          if(lables_change.at<int>(i) == 0) {
               // from main content to Ad
-              if(shot_list[i].length < shot_list[i-1].length) {
-                  if(!(i-1 >=0 && lables.at<int>(i-1) == 0 && shot_list[i-1].length < shot_list[i-2].length))
-                    ad_start_frame = shot_list[i].start_frame_id;
+              if(ad_start_frame == -1 && shot_list[i].length < shot_list[i-1].length) {
+                  ad_start_frame = shot_list[i].start_frame_id;
+                  start_id = i;
+                  cout << "ad_start_frame" << ad_start_frame<<endl;
               }
               // from Ad to main content
-              else if(shot_list[i].length > shot_list[i-1].length){
-                  if(!(i+1 < shot_list.size() && lables.at<int>(i+1) == 0 && shot_list[i+1].length > shot_list[i].length)) {
+              else if(shot_list[i].length > shot_list[i-1].length ){
+                  if(!(i+1 < shot_list.size() && lables_change.at<int>(i+1) == 0 && shot_list[i+1].length > shot_list[i].length)) {
+                      for(int j = start_id; j <= i-1; j++) ad_list_shot_ids.push_back(j);
+                      start_id = -1;
                       ad_end_frame = shot_list[i-1].end_frame_id;
-                      ad_list_frameid_frameid.push_back( make_pair(ad_start_frame, ad_end_frame) );
+                      if( ad_end_frame - std::max(ad_start_frame, 0l) >= min_ad_length && ad_end_frame - std::max(ad_start_frame, 0l) <= max_ad_length)
+                        ad_list_frameid_frameid.push_back( make_pair(std::max(ad_start_frame, 0l), ad_end_frame) );
+                      ad_start_frame = -1;
                   }
               }
+          }
+          else if(i == shot_list.size()-1 && ad_start_frame != -1) {
+              for(int j = start_id; j <= i; j++) ad_list_shot_ids.push_back(j);
+              start_id = -1;
+              ad_end_frame = shot_list[i].end_frame_id;
+              if( ad_end_frame - std::max(ad_start_frame, 0l) >= min_ad_length && ad_end_frame - std::max(ad_start_frame, 0l) <= max_ad_length)
+                ad_list_frameid_frameid.push_back( make_pair(std::max(ad_start_frame, 0l), ad_end_frame) );
+              ad_start_frame = -1;
           }
       }
   }
   // lable 1 is Ad change frame
   else {
+      // Deal with gradually change, they all labled with 0(no great change), but 29-138-291 is a gruadual change:
+      // shot 22	length : 51	weight : 35	 delta: 1.59091	from : 6337	to : 6388	label: 0
+      // shot 23	length : 24	weight : 16	 delta: 2.1875	from : 6388	to : 6412	label: 0
+      // shot 24	length : 39	weight : 27	 delta: 1.6875	from : 6412	to : 6451	label: 0
+      // shot 25	length : 138	weight : 96	 delta: 3.55556	from : 6451	to : 6589	label: 0
+      // shot 26	length : 291	weight : 436	 delta: 4.54167	from : 6589	to : 6880	label: 0
+      // shot 27	length : 668	weight : 1002	 delta: 2.29817	from : 6880	to : 7548	label: 0
+      // shot 28	length : 392	weight : 588	 delta: 1.70408	from : 7548	to : 7940	label: 0
+        for(int i = 0 ; i < shot_list.size()-1; i++) {
+            if(lables_change.at<int>(i) == 0
+                && lables_change.at<int>(i+1) == 0
+                && dataset_change.at<float>(i) > 3
+                && dataset_change.at<float>(i+1) > 3
+            ) {
+                cout <<" find a fucking gradually change"<<endl;
+                  long avg_prev = 0;
+                  long avg_post = 0;
+                  int count_prev = 0;
+                  int count_post = 0;
+                  for(int j = 1 ; j <= 2; j++) {
+                      if(i - j >= 0) {
+                          avg_prev += shot_list[i - j].length;
+                          count_prev ++;
+                      }
+                      if(i + j < shot_list.size()) {
+                          avg_post += shot_list[i + j].length;
+                          count_post ++;
+                      }
+                      cout <<"avg_prev: " << avg_prev << endl;
+                      cout <<"avg_post: " << avg_post << endl;
+                      cout <<"count_prev: " << count_prev << endl;
+                      cout <<"count_post: " << count_post << endl;
+                  }
+                  if(count_prev) avg_prev /= count_prev;
+                  if(count_post) avg_post /= count_post;
+                  cout <<"avg_prev: " << avg_prev << endl;
+                  cout <<"avg_post: " << avg_post << endl;
+                  if( avg_prev && avg_post && ((avg_post / avg_prev) > 5 || (avg_prev / avg_post) > 5 )) {
+                      cout <<"get a fucking shit" <<endl;
+                      lables_change.at<int>(i) = 1;
+                  }
+              }
+        }
+
+      cout<<"1 is big change"<<endl;
       for(int i = 0; i < shot_list.size(); i++) {
-          if(lables.at<int>(i) == 1) {
+          if(lables_change.at<int>(i) == 1) {
               // from main content to Ad
-              if(shot_list[i].length < shot_list[i-1].length) {
-                  if(!(i-1 >=0 && lables.at<int>(i-1) == 1 && shot_list[i-1].length < shot_list[i-2].length))
-                    ad_start_frame = shot_list[i].start_frame_id;
+              if(ad_start_frame == -1 && shot_list[i].length < shot_list[i-1].length) {
+                  ad_start_frame = shot_list[i].start_frame_id;
+                  start_id = i;
+                  cout << "ad_start_frame" << ad_start_frame<<endl;
               }
               // from Ad to main content
               else if(shot_list[i].length > shot_list[i-1].length){
-                  if(!(i+1 < shot_list.size() && lables.at<int>(i+1) == 1 && shot_list[i+1].length > shot_list[i].length)) {
+                  if(!(i+1 < shot_list.size() && lables_change.at<int>(i+1) == 1 && shot_list[i+1].length > shot_list[i].length)) {
+                      for(int j = start_id; j <= i-1; j++) ad_list_shot_ids.push_back(j);
+                      start_id = -1;
                       ad_end_frame = shot_list[i-1].end_frame_id;
-                      ad_list_frameid_frameid.push_back( make_pair(ad_start_frame, ad_end_frame) );
+                      if( ad_end_frame - std::max(ad_start_frame, 0l) >= min_ad_length && ad_end_frame - std::max(ad_start_frame, 0l) <= max_ad_length)
+                        ad_list_frameid_frameid.push_back( make_pair(std::max(ad_start_frame, 0l), ad_end_frame) );
+                      ad_start_frame = -1;
                   }
               }
           }
+          else if(i == shot_list.size()-1 && ad_start_frame != -1) {
+              for(int j = start_id; j <= i; j++) ad_list_shot_ids.push_back(j);
+              start_id = -1;
+              ad_end_frame = shot_list[i].end_frame_id;
+              if( ad_end_frame - std::max(ad_start_frame, 0l) >= min_ad_length && ad_end_frame - std::max(ad_start_frame, 0l) <= max_ad_length)
+                ad_list_frameid_frameid.push_back( make_pair(std::max(ad_start_frame, 0l), ad_end_frame) );
+              ad_start_frame = -1;
+          }
       }
+  }
+
+  cout << "shot of ADs : " << endl;
+  for(int i = 0; i < ad_list_shot_ids.size(); i++) {
+      cout<< i << "\t" << ad_list_shot_ids[i] <<endl;
   }
 
   for(int i = 0 ; i < ad_list_frameid_frameid.size(); i++) {
@@ -242,7 +408,6 @@ bool ShotBoundaryDetector::StartDetection() {
 
   ad_list = ad_list_frameid_frameid;
 
-  int frame_num = i;
   cout << "The Video contains" << frame_num << " frames" <<endl;
 
   // Generate tomograph for whole video
