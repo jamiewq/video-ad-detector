@@ -242,7 +242,7 @@ bool ShotBoundaryDetector::StartDetection() {
               && dataset_change.at<float>(i) > 3
               && dataset_change.at<float>(i+1) > 3
           ) {
-                cout <<" find a fucking gradually change"<<endl;
+                cout <<" find a gradually change"<<endl;
                 float avg_prev = 0;
                 float avg_post = 0;
                 int count_prev = 0;
@@ -266,7 +266,6 @@ bool ShotBoundaryDetector::StartDetection() {
                 cout <<"avg_prev: " << avg_prev << endl;
                 cout <<"avg_post: " << avg_post << endl;
                 if( avg_prev && avg_post && ((avg_post / avg_prev) > 5 || (avg_prev / avg_post) > 5 )) {
-                    cout <<"get a fucking shit" <<endl;
                     lables_change.at<int>(i) = 0;
                 }
             }
@@ -343,7 +342,6 @@ bool ShotBoundaryDetector::StartDetection() {
                   cout <<"avg_prev: " << avg_prev << endl;
                   cout <<"avg_post: " << avg_post << endl;
                   if( avg_prev && avg_post && ((avg_post / avg_prev) > 5 || (avg_prev / avg_post) > 5 )) {
-                      cout <<"get a fucking shit" <<endl;
                       lables_change.at<int>(i) = 1;
                   }
               }
