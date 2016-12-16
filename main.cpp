@@ -2,20 +2,17 @@
 #include <ctime>
 int main() {
 
-  // ShotBoundaryDetector detector("./dataset2/Ads/nfl_Ad_15s.rgb", 480, 270);
-  // ShotBoundaryDetector detector("./dataset2/Ads/mcd_Ad_15s.rgb", 480, 270);
-  ShotBoundaryDetector detector("./dataset2/Videos/data_test2.rgb", 480, 270);
-  // ShotBoundaryDetector detector("./dataset/Ads/Starbucks_Ad_15s.rgb", 480, 270);
-  // ShotBoundaryDetector detector("./dataset/Ads/Subway_Ad_15s.rgb", 480, 270);
   // ShotBoundaryDetector detector("./dataset/Videos/data_test1.rgb", 480, 270);
+  ShotBoundaryDetector detector("./dataset/Ads/Subway_Ad_15s.rgb", 480, 270);
+  // ShotBoundaryDetector detector("./dataset/Ads/Starbucks_Ad_15s.rgb", 480, 270);
 
   // detector.display_cut(true);
-  detector.set_similar_threshold(8);
+  detector.set_similar_threshold(6);
   detector.set_cut_threshold(10);
-  detector.set_min_ad_length(150); // 3 seconds
+  detector.set_min_ad_length(10); // 3 seconds
   detector.set_max_ad_length(3600); // 2 min
-  detector.set_max_ad_shot(270); // priori knowledge, boundary between ad and main shot. No worry to much about this, as we consider great changes first
-  detector.set_max_delta(10); //  delta = length[i]/length[i-1] or length[i-1]/length[i] whichever >= 1
+  detector.set_max_ad_shot(600); // priori knowledge, boundary between ad and main shot. No worry to much about this, as we consider great changes first
+  detector.set_max_delta(30); //  delta = length[i]/length[i-1] or length[i-1]/length[i] whichever >= 1
   int start_s = clock();
   detector.StartDetection();
   int stop_s = clock();
