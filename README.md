@@ -29,11 +29,13 @@ $ clang++ `pkg-config --cflags --libs opencv` main.cpp Image.cpp Detector.cpp -o
 ~~~
 
 ## Usage
+Check out the demo video: [Link to Dataset](https://drive.google.com/drive/folders/0B2jNhQHbeb2dbEhrZ3JwbDBTUE0?usp=sharing)
+
 For more detailed information, checkout Detector.h and main.cpp
 
 ~~~
-// Initialization with target rgb file and resolution of each frame
-ShotBoundaryDetector detector("./dataset/Ads/Subway_Ad_15s.rgb", 480, 270);
+  // Initialization with target rgb file and resolution of each frame
+  ShotBoundaryDetector detector("./dataset/Ads/Subway_Ad_15s.rgb", 480, 270);
   detector.display_cut(true); // Display first frame of each shot
   detector.set_similar_threshold(6); // Threshold of how to define similar of two pixel
   detector.set_cut_threshold(10); // Threshold of cut detecting (value of second-order derivative)
